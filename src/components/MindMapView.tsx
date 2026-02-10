@@ -9,13 +9,13 @@ type MarkmapInstance = any;
 
 interface MindMapViewProps {
   mindmap: MindMapData;
+  isDark: boolean;
 }
 
-export default function MindMapView({
-  mindmap,
-}: MindMapViewProps) {
+export default function MindMapView({ mindmap, isDark }: MindMapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const styleRef = useRef<SVGStyleElement | null>(null);
   const mmRef = useRef<MarkmapInstance | null>(null);
   const initedRef = useRef(false);
 
@@ -36,6 +36,7 @@ export default function MindMapView({
     initedRef.current = true;
 
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("data-markmap", "");
     containerRef.current.appendChild(svg);
     svgRef.current = svg;
 
@@ -45,17 +46,12 @@ export default function MindMapView({
     svg.setAttribute("height", String(height));
     svg.style.display = "block";
 
-    // Inject styles directly into the SVG to force bright text on dark bg.
-    // This beats markmap's inline styles.
-    const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
-    style.textContent = `
-      foreignObject div, foreignObject span, foreignObject strong, foreignObject em,
-      text, tspan {
-        color: #f3f4f6 !important;
-        fill: #f3f4f6 !important;
-      }
-      path { opacity: 0.7; }
-    `;
+    // Inject theme-aware styles into the SVG
+    const style = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "style"
+    );
+    styleRef.current = style;
     svg.appendChild(style);
 
     // Keep dimensions in sync on resize
@@ -65,18 +61,36 @@ export default function MindMapView({
     // Create markmap
     import("markmap-view").then(({ Markmap }) => {
       const tree = buildTree(mindmap, "");
-      mmRef.current = Markmap.create(svg, {
-        autoFit: true,
-        duration: 300,
-        paddingX: 20,
-        initialExpandLevel: -1,
-      }, tree);
+      mmRef.current = Markmap.create(
+        svg,
+        {
+          autoFit: true,
+          duration: 300,
+          paddingX: 20,
+          initialExpandLevel: -1,
+        },
+        tree
+      );
     });
 
     return () => observer.disconnect();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Update data when mindmap or transcript changes
+  // Update SVG text styles when theme changes
+  useEffect(() => {
+    if (!styleRef.current) return;
+    const textColor = isDark ? "#f3f4f6" : "#111827";
+    styleRef.current.textContent = `
+      foreignObject div, foreignObject span, foreignObject strong, foreignObject em,
+      text, tspan {
+        color: ${textColor} !important;
+        fill: ${textColor} !important;
+      }
+      path { opacity: 0.7; }
+    `;
+  }, [isDark]);
+
+  // Update data when mindmap changes
   useEffect(() => {
     if (!mmRef.current) return;
     const tree = buildTree(mindmap, "");
@@ -84,10 +98,5 @@ export default function MindMapView({
     mmRef.current.fit();
   }, [mindmap]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0"
-    />
-  );
+  return <div ref={containerRef} className="absolute inset-0" />;
 }

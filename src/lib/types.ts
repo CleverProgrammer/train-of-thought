@@ -24,3 +24,14 @@ export const EMPTY_MINDMAP: MindMapData = {
   title: 'Conversation',
   children: [],
 }
+
+/** A saved conversation with its mindmap and metadata. */
+export interface Conversation {
+  id: string
+  title: string
+  mindmap: MindMapData
+  transcript: string // full raw transcript text
+  thumbnail?: string // base64 PNG of the mind map
+  createdAt: number // unix ms
+  updatedAt: number // unix ms
+}

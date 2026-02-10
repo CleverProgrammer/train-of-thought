@@ -1,24 +1,38 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
- * Force all markmap text to be bright on dark background.
- * Markmap renders nodes as HTML inside <foreignObject>, so we
- * need to target the actual DOM elements, not SVG text.
+ * Markmap SVG text styling — adapts to light/dark mode.
+ * Scoped to [data-markmap] so it doesn't affect button icons etc.
+ * Uses high-specificity selectors to beat Markmap's inline styles.
  */
 
-/* Nuclear option: every piece of text inside the SVG */
-svg * {
-  color: #f3f4f6 !important;        /* gray-100 */
+/* ── Dark mode: bright text ── */
+.dark svg[data-markmap] *,
+.dark svg[data-markmap] foreignObject *,
+.dark svg[data-markmap] text,
+.dark svg[data-markmap] tspan {
+  color: #f3f4f6 !important;
   fill: #f3f4f6 !important;
 }
 
-/* Keep lines/paths using their own colors */
-svg path {
+/* ── Light mode: dark text ── */
+svg[data-markmap] *,
+svg[data-markmap] foreignObject *,
+svg[data-markmap] text,
+svg[data-markmap] tspan {
+  color: #111827 !important;
+  fill: #111827 !important;
+}
+
+/* Keep lines/paths using their own colors in both modes */
+svg[data-markmap] path {
   fill: none !important;
   opacity: 0.7;
 }
 
-svg circle {
+svg[data-markmap] circle {
   fill: revert !important;
   opacity: 0.9;
 }
