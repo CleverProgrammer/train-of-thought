@@ -7,24 +7,22 @@ import MindMapView from "./MindMapView";
 /**
  * Main client component that wires together:
  *  - Real-time transcription (AssemblyAI)
+ *  - LLM extraction (GPT-4o-mini)
  *  - Mind map visualization (Markmap)
- *  - Mic controls
  */
 export default function TrainOfThought() {
-  const { segments, currentTranscript, isListening, start, stop } =
+  const { mindmap, currentTranscript, isListening, start, stop } =
     useTranscription();
 
-  const hasContent = segments.length > 0 || currentTranscript.trim() !== "";
+  const hasContent =
+    mindmap.children.length > 0 || currentTranscript.trim() !== "";
 
   return (
     <div className="relative flex h-screen w-screen flex-col bg-gray-950 text-white overflow-hidden">
       {/* ── Mind map area ─────────────────────────────── */}
       <div className="flex-1 relative">
         {hasContent ? (
-          <MindMapView
-            segments={segments}
-            currentTranscript={currentTranscript}
-          />
+          <MindMapView mindmap={mindmap} />
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="text-center space-y-3">
@@ -34,7 +32,7 @@ export default function TrainOfThought() {
               </h1>
               <p className="text-sm text-gray-400 max-w-xs">
                 Hit start and begin talking. Your ideas will appear as a mind
-                map in real time.
+                map in real time — organized by topic.
               </p>
             </div>
           </div>

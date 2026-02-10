@@ -1,11 +1,24 @@
 @import "tailwindcss";
 
 /*
- * Override markmap's default SVG styles for a dark theme.
- * Markmap renders colored nodes by default; we nudge it
- * to look better on the dark background.
+ * Force all markmap text to be bright on dark background.
+ * Markmap renders nodes as HTML inside <foreignObject>, so we
+ * need to target the actual DOM elements, not SVG text.
  */
-svg.markmap {
-  width: 100%;
-  height: 100%;
+
+/* Nuclear option: every piece of text inside the SVG */
+svg * {
+  color: #f3f4f6 !important;        /* gray-100 */
+  fill: #f3f4f6 !important;
+}
+
+/* Keep lines/paths using their own colors */
+svg path {
+  fill: none !important;
+  opacity: 0.7;
+}
+
+svg circle {
+  fill: revert !important;
+  opacity: 0.9;
 }

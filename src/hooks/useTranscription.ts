@@ -2,32 +2,71 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { startMicStream, SAMPLE_RATE } from '@/lib/audioUtils'
+import type { MindMapData } from '@/lib/types'
+import { EMPTY_MINDMAP } from '@/lib/types'
 
-/**
- * AssemblyAI v2 Real-Time WebSocket endpoint.
- * v2 is used because the browser temporary-token flow is
- * fully supported here (v3 tokens use a different mechanism).
- */
 const WS_BASE = 'wss://api.assemblyai.com/v2/realtime/ws'
 
 /**
- * Hook that manages real-time transcription via AssemblyAI streaming.
+ * Hook that manages:
+ *  1. Real-time transcription (AssemblyAI)
+ *  2. LLM extraction pipeline (GPT-4o-mini via /api/extract)
  *
- * Returns:
- *  - segments:          completed transcript turns (FinalTranscript)
- *  - currentTranscript: in-progress text (PartialTranscript)
- *  - isListening:       whether the mic is active
- *  - start / stop:      control functions
+ * Returns the structured mindmap + live transcript + controls.
  */
 export function useTranscription() {
-  const [segments, setSegments] = useState<string[]>([])
+  const [mindmap, setMindmap] = useState<MindMapData>(EMPTY_MINDMAP)
   const [currentTranscript, setCurrentTranscript] = useState('')
   const [isListening, setIsListening] = useState(false)
 
+  // Refs for WebSocket, mic, and extraction pipeline
   const wsRef = useRef<WebSocket | null>(null)
   const cleanupMicRef = useRef<(() => void) | null>(null)
+  const mindmapRef = useRef<MindMapData>(EMPTY_MINDMAP)
+  const pendingTextsRef = useRef<string[]>([])
+  const extractingRef = useRef(false)
+
+  /* ── LLM extraction pipeline ─────────────────────── */
+
+  const processExtraction = useCallback(async () => {
+    // Don't start if already extracting or nothing to process
+    if (extractingRef.current || pendingTextsRef.current.length === 0) return
+
+    extractingRef.current = true
+    // Grab all pending sentences and clear the buffer
+    const texts = pendingTextsRef.current.splice(0)
+    const combinedText = texts.join(' ')
+
+    try {
+      console.log('[ToT] Extracting:', combinedText)
+      const res = await fetch('/api/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          newText: combinedText,
+          currentMap: mindmapRef.current,
+        }),
+      })
+
+      if (res.ok) {
+        const updated: MindMapData = await res.json()
+        mindmapRef.current = updated
+        setMindmap(updated)
+        console.log('[ToT] Mindmap updated:', updated.topics.length, 'topics')
+      }
+    } catch (err) {
+      console.error('[ToT] Extraction failed:', err)
+    } finally {
+      extractingRef.current = false
+      // If new sentences arrived while we were extracting, process them
+      if (pendingTextsRef.current.length > 0) {
+        processExtraction()
+      }
+    }
+  }, [])
 
   /* ── cleanup helper ─────────────────────────────────── */
+
   const cleanup = useCallback(() => {
     cleanupMicRef.current?.()
     cleanupMicRef.current = null
@@ -43,14 +82,22 @@ export function useTranscription() {
   }, [])
 
   /* ── start streaming ────────────────────────────────── */
+
   const start = useCallback(async () => {
+    // Reset state for a fresh session
+    mindmapRef.current = EMPTY_MINDMAP
+    setMindmap(EMPTY_MINDMAP)
+    setCurrentTranscript('')
+    pendingTextsRef.current = []
+    extractingRef.current = false
+
     try {
-      // 1. Get temporary token from our API route
+      // 1. Get temporary token
       const res = await fetch('/api/token', { method: 'POST' })
       if (!res.ok) throw new Error('Failed to get token')
       const { token } = await res.json()
 
-      // 2. Build WebSocket URL (v2 real-time)
+      // 2. Connect WebSocket
       const params = new URLSearchParams({
         sample_rate: String(SAMPLE_RATE),
         token,
@@ -72,7 +119,7 @@ export function useTranscription() {
         }
       }
 
-      // 4. Handle incoming transcription events (v2 message format)
+      // 4. Handle transcription events
       ws.onmessage = event => {
         const data = JSON.parse(event.data)
 
@@ -82,44 +129,42 @@ export function useTranscription() {
             break
 
           case 'PartialTranscript':
-            // Partial results — text may still change
-            if (data.text) {
-              setCurrentTranscript(data.text)
-            }
+            if (data.text) setCurrentTranscript(data.text)
             break
 
           case 'FinalTranscript':
-            // Finalized text — won't change
             if (data.text?.trim()) {
-              setSegments(prev => [...prev, data.text])
               setCurrentTranscript('')
+              // Skip very short fragments — they're almost always noise
+              const words = data.text.trim().split(/\s+/)
+              if (words.length >= 4) {
+                pendingTextsRef.current.push(data.text)
+                processExtraction()
+              } else {
+                console.log('[ToT] Skipped short fragment:', data.text)
+              }
             }
             break
 
           case 'SessionTerminated':
-            console.log('[ToT] Session terminated by server')
-            break
-
-          default:
+            console.log('[ToT] Session terminated')
             break
         }
       }
 
-      ws.onerror = err => {
-        console.error('[ToT] WebSocket error:', err)
-      }
-
-      ws.onclose = event => {
-        console.log('[ToT] WebSocket closed:', event.code, event.reason)
+      ws.onerror = err => console.error('[ToT] WS error:', err)
+      ws.onclose = e => {
+        console.log('[ToT] WS closed:', e.code, e.reason)
         setIsListening(false)
       }
     } catch (err) {
-      console.error('[ToT] Failed to start transcription:', err)
+      console.error('[ToT] Failed to start:', err)
       cleanup()
     }
-  }, [cleanup])
+  }, [cleanup, processExtraction])
 
   /* ── stop streaming ─────────────────────────────────── */
+
   const stop = useCallback(() => {
     cleanup()
     setIsListening(false)
@@ -127,7 +172,7 @@ export function useTranscription() {
   }, [cleanup])
 
   return {
-    segments,
+    mindmap,
     currentTranscript,
     isListening,
     start,
