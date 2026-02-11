@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback } from "react";
-import { buildTree } from "@/lib/buildTree";
+import { buildTree, collectNodeTexts } from "@/lib/buildTree";
 import type { MindMapData } from "@/lib/types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -18,6 +18,7 @@ export default function MindMapView({ mindmap, isDark }: MindMapViewProps) {
   const styleRef = useRef<SVGStyleElement | null>(null);
   const mmRef = useRef<MarkmapInstance | null>(null);
   const initedRef = useRef(false);
+  const prevTextsRef = useRef<Set<string>>(new Set());
 
   /**
    * Resize the SVG to match its container's pixel dimensions.
@@ -58,6 +59,9 @@ export default function MindMapView({ mindmap, isDark }: MindMapViewProps) {
     const observer = new ResizeObserver(() => syncSize());
     observer.observe(containerRef.current);
 
+    // Seed prevTexts so the initial render doesn't glow everything
+    prevTextsRef.current = collectNodeTexts(mindmap.children);
+
     // Create markmap
     import("markmap-view").then(({ Markmap }) => {
       const tree = buildTree(mindmap, "");
@@ -90,10 +94,19 @@ export default function MindMapView({ mindmap, isDark }: MindMapViewProps) {
     `;
   }, [isDark]);
 
-  // Update data when mindmap changes
+  // Update data when mindmap changes — highlight new nodes
   useEffect(() => {
     if (!mmRef.current) return;
-    const tree = buildTree(mindmap, "");
+
+    // Diff: find texts that are in the new mindmap but weren't in the previous
+    const currentTexts = collectNodeTexts(mindmap.children);
+    const newTexts = new Set<string>();
+    for (const t of currentTexts) {
+      if (!prevTextsRef.current.has(t)) newTexts.add(t);
+    }
+    prevTextsRef.current = currentTexts;
+
+    const tree = buildTree(mindmap, "", newTexts.size > 0 ? newTexts : undefined);
     mmRef.current.setData(tree);
     mmRef.current.fit();
   }, [mindmap]);
