@@ -63,6 +63,7 @@ export function useTranscription() {
   const fullTranscriptRef = useRef('')
   const pendingTextsRef = useRef<string[]>([])
   const extractingRef = useRef(false)
+  const commandInFlightRef = useRef(false)
   const lastTimestampRef = useRef(0)
   const recallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -88,6 +89,7 @@ export function useTranscription() {
 
   const processCommand = useCallback(
     async (commandText: string, fullText: string) => {
+      commandInFlightRef.current = true
       setIsProcessingCommand(true)
       try {
         console.log('[ToT] 🐾 Poppy command:', commandText)
@@ -107,18 +109,19 @@ export function useTranscription() {
           if (result.passthrough) {
             console.log('[ToT] Poppy passthrough → routing to extraction')
             pendingTextsRef.current.push(fullText)
-            processExtraction()
-            return
+          } else {
+            mindmapRef.current = result
+            setMindmap(result)
+            console.log('[ToT] 🐾 Poppy updated mindmap:', result.children.length, 'topics')
           }
-
-          mindmapRef.current = result
-          setMindmap(result)
-          console.log('[ToT] 🐾 Poppy updated mindmap:', result.children.length, 'topics')
         }
       } catch (err) {
         console.error('[ToT] Poppy command failed:', err)
       } finally {
+        commandInFlightRef.current = false
         setIsProcessingCommand(false)
+        // Now flush any extractions that queued up while command was in-flight
+        processExtraction()
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,6 +131,9 @@ export function useTranscription() {
   /* ── LLM extraction pipeline ─────────────────────── */
 
   const processExtraction = useCallback(async () => {
+    // Don't run extraction while a Poppy command is in-flight — the command
+    // will update the mindmap and then flush pending extractions when it's done.
+    if (commandInFlightRef.current) return
     if (extractingRef.current || pendingTextsRef.current.length === 0) return
 
     extractingRef.current = true
@@ -355,10 +361,10 @@ export function useTranscription() {
       console.log('[ToT] Auto-saved on pause:', saved.id)
 
       // Fire-and-forget: generate a killer AI title in the background
-      generateAITitle(saved.id, mindmapRef.current).then((title) => {
+      generateAITitle(saved.id, mindmapRef.current).then(title => {
         if (title) {
           console.log('[ToT] AI title:', title)
-          setRefreshCounter((c) => c + 1)
+          setRefreshCounter(c => c + 1)
         }
       })
     }
@@ -402,11 +408,11 @@ export function useTranscription() {
       console.log('[ToT] Conversation saved:', saved.id, saved.title)
 
       // Fire-and-forget: generate a killer AI title in the background
-      generateAITitle(saved.id, mindmapRef.current).then((title) => {
+      generateAITitle(saved.id, mindmapRef.current).then(title => {
         if (title) {
           console.log('[ToT] AI title:', title)
           // Bump refresh counter so the parent re-reads saved convos
-          setRefreshCounter((c) => c + 1)
+          setRefreshCounter(c => c + 1)
         }
       })
     }
